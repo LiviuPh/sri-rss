@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 from xml.etree.ElementTree import Element, SubElement, ElementTree
 
 BASE_URL = "https://intelligence.sri.ro/"
+
 response = requests.get(
     BASE_URL,
     headers={"User-Agent": "Mozilla/5.0"},
@@ -15,6 +16,7 @@ response = requests.get(
 response.raise_for_status()
 
 soup = BeautifulSoup(response.text, "html.parser")
+
 rss = Element("rss", version="2.0")
 channel = SubElement(rss, "channel")
 
@@ -28,35 +30,42 @@ SubElement(channel, "lastBuildDate").text = format_datetime(
 seen = set()
 count = 0
 
-for article in soup.select("article"):
-    heading = article.find(["h1", "h2", "h3"])
-    link = article.find("a", href=True)
+for heading in soup.find_all(["h1", "h2", "h3"]):
+    link = heading.find("a", href=True)
 
-    if not heading or not link:
+    if not link:
+        link = heading.find_parent("a", href=True)
+
+    if not link:
         continue
 
     title = heading.get_text(" ", strip=True)
-    url = urljoin(BASE_URL, link["href"])
+    url = urljoin(BASE_URL, link["href"]).split("#")[0]
 
-    if not title or url in seen:
+    if not title or "intelligence.sri.ro" not in url:
+        continue
+
+    if url.rstrip("/") == BASE_URL.rstrip("/") or url in seen:
         continue
 
     seen.add(url)
+
     item = SubElement(channel, "item")
     SubElement(item, "title").text = title
     SubElement(item, "link").text = url
     SubElement(item, "guid").text = url
 
-    date = article.find("time")
-    if date and date.get("datetime"):
-        SubElement(item, "pubDate").text = date["datetime"]
-
     count += 1
-    if count >= 30:
+    if count >= 50:
         break
 
 if count == 0:
-    raise RuntimeError("Nu au fost identificate articole. Structura paginii trebuie verificată.")
+    raise RuntimeError("Nu au fost identificate articole.")
 
-ElementTree(rss).write("feed.xml", encoding="utf-8", xml_declaration=True)
+ElementTree(rss).write(
+    "feed.xml",
+    encoding="utf-8",
+    xml_declaration=True
+)
+
 print(f"Flux RSS generat: {count} articole")
